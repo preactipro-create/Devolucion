@@ -14,12 +14,12 @@ function Login() {
 
   const redirectTo = location.state?.from?.pathname || '/'
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault()
     setError('')
     setLoading(true)
     try {
-      login(username, password)
+      await login(username, password)
       navigate(redirectTo, { replace: true })
     } catch (err) {
       setError(err.message)
