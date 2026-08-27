@@ -2,6 +2,8 @@ import { useRef, useState } from 'react'
 import InlineEditableText from '../components/InlineEditableText.jsx'
 import useLocalStorageState from '../hooks/useLocalStorageState.js'
 import { generatePdfFromElement } from '../utils/generatePdf.js'
+import { useAuth } from '../context/AuthContext.jsx'
+import { crearActa } from '../services/api.js'
 
 const ACCESORIOS = [
   'Monitor',
@@ -23,9 +25,11 @@ function generarIdFila() {
 }
 
 function Devolucion() {
+  const { token } = useAuth()
   const printRef = useRef(null)
   const [generating, setGenerating] = useState(false)
-  const [saveStatus, setSaveStatus] = useState('idle') // idle | saving | saved
+  const [saveStatus, setSaveStatus] = useState('idle') // idle | saving | saved | error
+  const [errorGuardado, setErrorGuardado] = useState('')
   const [estadoActa, setEstadoActa] = useState('borrador') // borrador | finalizado
   const [errores, setErrores] = useState({})
 
@@ -131,16 +135,7 @@ function Devolucion() {
     }
   }
 
-  function ejecutarGuardado(callback) {
-    setSaveStatus('saving')
-    setTimeout(() => {
-      callback()
-      setSaveStatus('saved')
-      setTimeout(() => setSaveStatus('idle'), 1200)
-    }, 400)
-  }
-
-  function handleFinalizarDevolucion() {
+  async function handleFinalizarDevolucion() {
     const nuevosErrores = {}
     if (!fecha) nuevosErrores.fecha = true
     if (!responsable.trim()) nuevosErrores.responsable = true
@@ -151,7 +146,35 @@ function Devolucion() {
     }
     setErrores(nuevosErrores)
     if (Object.keys(nuevosErrores).length > 0) return
-    ejecutarGuardado(() => setEstadoActa('finalizado'))
+
+    setErrorGuardado('')
+    setSaveStatus('saving')
+    try {
+      await crearActa(token, {
+        fecha,
+        responsable,
+        departamento,
+        planta,
+        modalidad: modalidadPaginas,
+        marca: marcaEquipo === 'Otro' ? marcaEquipoDetalle : marcaEquipo,
+        serie: noSerie,
+        nombre_equipo: nombreEquipo,
+        borrador: false,
+        accesorios: filasAccesorios.map((f) => ({
+          articulo: f.articulo,
+          marca: f.marca,
+          modelo: f.modelo,
+          serie: f.serie,
+          estado: f.estado,
+        })),
+      })
+      setEstadoActa('finalizado')
+      setSaveStatus('saved')
+      setTimeout(() => setSaveStatus('idle'), 1200)
+    } catch (err) {
+      setSaveStatus('error')
+      setErrorGuardado(err.message || 'No se pudo guardar el acta')
+    }
   }
 
   async function handleGeneratePdf() {
@@ -739,6 +762,11 @@ function Devolucion() {
           {errores.equipo && (
             <p className="text-error font-label-sm text-label-sm px-1">
               Indica el No. de Serie o el Nombre del Equipo para finalizar.
+            </p>
+          )}
+          {saveStatus === 'error' && errorGuardado && (
+            <p className="text-error font-label-sm text-label-sm px-1">
+              {errorGuardado}
             </p>
           )}
 
