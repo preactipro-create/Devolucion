@@ -1,18 +1,10 @@
 import { createContext, useContext, useEffect, useState } from 'react'
+import { login as loginRequest } from '../services/api.js'
 
 const AuthContext = createContext(null)
 const STORAGE_KEY = 'legumex_session'
 
-// TODO(backend): reemplazar esta lista y la función login() por una llamada
-// real, por ejemplo: POST /api/auth/login -> { name, role, token }
-// Mientras no exista base de datos, estos usuarios "demo" permiten probar
-// los flujos de admin vs usuario normal.
-const DEMO_USERS = [
-  { username: 'admin', password: 'admin123', name: 'Administrador', role: 'admin' },
-  { username: 'usuario', password: 'usuario123', name: 'Usuario TI', role: 'user' },
-]
-
-function readStoredUser() {
+function readStoredSession() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     return raw ? JSON.parse(raw) : null
@@ -22,40 +14,35 @@ function readStoredUser() {
 }
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(readStoredUser)
+  const [session, setSession] = useState(readStoredSession)
 
   useEffect(() => {
     try {
-      if (user) localStorage.setItem(STORAGE_KEY, JSON.stringify(user))
+      if (session) localStorage.setItem(STORAGE_KEY, JSON.stringify(session))
       else localStorage.removeItem(STORAGE_KEY)
     } catch {
       // almacenamiento no disponible, se ignora silenciosamente
     }
-  }, [user])
+  }, [session])
 
-  function login(username, password) {
-    const match = DEMO_USERS.find(
-      (u) =>
-        u.username.toLowerCase() === username.trim().toLowerCase() && u.password === password
-    )
-    if (!match) {
-      throw new Error('Usuario o contraseña incorrectos')
-    }
-    const { password: _omit, ...safeUser } = match
-    setUser(safeUser)
-    return safeUser
+  async function login(username, password) {
+    const result = await loginRequest(username, password)
+    // result = { token, user: { id, username, name, role } }
+    setSession(result)
+    return result.user
   }
 
   function logout() {
-    setUser(null)
+    setSession(null)
   }
 
   const value = {
-    user,
+    user: session?.user || null,
+    token: session?.token || null,
     login,
     logout,
-    isAuthenticated: Boolean(user),
-    isAdmin: user?.role === 'admin',
+    isAuthenticated: Boolean(session?.token),
+    isAdmin: session?.user?.role === 'admin',
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
