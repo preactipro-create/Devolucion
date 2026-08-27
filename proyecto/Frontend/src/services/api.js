@@ -30,12 +30,43 @@ export async function checkApiHealth() {
   return request('/api/health', { method: 'GET' })
 }
 
-// Punto centralizado para futuras llamadas CRUD (Fase 2):
-// export function getRecords() { return request('/api/records') }
-// export function createRecord(payload) { return request('/api/records', { method: 'POST', body: JSON.stringify(payload) }) }
-// export function updateRecord(id, payload) { return request(`/api/records/${id}`, { method: 'PUT', body: JSON.stringify(payload) }) }
-// export function deleteRecord(id) { return request(`/api/records/${id}`, { method: 'DELETE' }) }
+// Llama con el token guardado en el header Authorization: Bearer <token>
+function authRequest(path, token, options = {}) {
+  return request(path, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  })
+}
+
+export async function login(username, password) {
+  return request('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ username, password }),
+  })
+}
+
+export async function crearActa(token, payload) {
+  return authRequest('/api/actas', token, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function listarActas(token) {
+  return authRequest('/api/actas', token, { method: 'GET' })
+}
+
+export async function obtenerAuditoria(token) {
+  return authRequest('/api/auditoria', token, { method: 'GET' })
+}
 
 export default {
   checkApiHealth,
+  login,
+  crearActa,
+  listarActas,
+  obtenerAuditoria,
 }
