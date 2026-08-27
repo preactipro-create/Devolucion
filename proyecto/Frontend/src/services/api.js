@@ -59,6 +59,43 @@ export async function listarActas(token) {
   return authRequest('/api/actas', token, { method: 'GET' })
 }
 
+export async function obtenerActa(token, id) {
+  return authRequest(`/api/actas/${id}`, token, { method: 'GET' })
+}
+
+export async function editarActa(token, id, payload) {
+  return authRequest(`/api/actas/${id}`, token, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function eliminarActa(token, id, password) {
+  return authRequest(`/api/actas/${id}`, token, {
+    method: 'DELETE',
+    body: JSON.stringify({ password }),
+  })
+}
+
+// El PDF requiere el header Authorization, así que no se puede abrir con un
+// simple <a href>; hay que pedirlo con fetch y convertir la respuesta a blob.
+export async function descargarPdfActa(token, id) {
+  const response = await fetch(`${API_URL}/api/actas/${id}/pdf`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!response.ok) {
+    let message = `Error ${response.status}`
+    try {
+      const data = await response.json()
+      message = data.message || message
+    } catch (_) {
+      // el error no vino en JSON
+    }
+    throw new Error(message)
+  }
+  return response.blob()
+}
+
 export async function obtenerAuditoria(token) {
   return authRequest('/api/auditoria', token, { method: 'GET' })
 }
@@ -68,5 +105,9 @@ export default {
   login,
   crearActa,
   listarActas,
+  obtenerActa,
+  editarActa,
+  eliminarActa,
+  descargarPdfActa,
   obtenerAuditoria,
 }
