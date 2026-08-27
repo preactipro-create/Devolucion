@@ -4,11 +4,11 @@ async function request(path, options = {}) {
   const url = `${API_URL}${path}`
 
   const response = await fetch(url, {
+    ...options,
     headers: {
       'Content-Type': 'application/json',
       ...(options.headers || {}),
     },
-    ...options,
   })
 
   let data = null
