@@ -8,6 +8,31 @@ const ACCION_INFO = {
   ELIMINAR: { label: 'Eliminado', icon: 'delete', classes: 'bg-error-container border-error text-error' },
 }
 
+const NOMBRES_CAMPO = {
+  fecha: 'Fecha',
+  responsable: 'Responsable',
+  departamento: 'Departamento',
+  puesto: 'Puesto',
+  planta: 'Planta',
+  modalidad: 'Modalidad',
+  tipo_equipo: 'Tipo de equipo',
+  marca: 'Marca',
+  modelo: 'Modelo',
+  serie: 'No. de serie',
+  nombre_equipo: 'Nombre del equipo',
+  procesador: 'Procesador',
+  memoria_ram: 'Memoria RAM',
+  disco_duro: 'Disco duro',
+  observaciones: 'Observaciones',
+  estado_equipo: 'Estado del equipo',
+  borrador: 'Borrador',
+}
+
+function formatearValor(valor) {
+  if (valor === null || valor === undefined || valor === '') return 'vacío'
+  return String(valor)
+}
+
 function iniciales(nombre) {
   if (!nombre) return '—'
   return nombre
@@ -23,6 +48,7 @@ function Auditoria() {
   const [logs, setLogs] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [expandidoId, setExpandidoId] = useState(null)
 
   useEffect(() => {
     let activo = true
@@ -120,43 +146,73 @@ function Auditoria() {
                         classes: 'bg-surface-container-highest border-outline text-on-surface',
                       }
                       return (
-                        <tr key={log.id} className="hover:bg-surface-blue transition-colors group">
-                          <td className="p-3 whitespace-nowrap font-label-sm text-on-surface-subtle">
-                            <div className="font-body-md text-on-surface">
-                              {log.fecha ? new Date(log.fecha).toLocaleDateString('es-GT') : '-'}
-                            </div>
-                            <div>{log.fecha ? new Date(log.fecha).toLocaleTimeString('es-GT') : ''}</div>
-                          </td>
-                          <td className="p-3">
-                            <div className="flex items-center gap-2">
-                              <div className="w-6 h-6 rounded-full flex items-center justify-center font-label-bold text-[10px] bg-secondary-container text-on-secondary-container">
-                                {iniciales(log.usuario)}
+                        <>
+                          <tr key={log.id} className="hover:bg-surface-blue transition-colors group">
+                            <td className="p-3 whitespace-nowrap font-label-sm text-on-surface-subtle">
+                              <div className="font-body-md text-on-surface">
+                                {log.fecha ? new Date(log.fecha).toLocaleDateString('es-GT') : '-'}
                               </div>
-                              <span className="font-medium">{log.usuario || 'Usuario eliminado'}</span>
-                            </div>
-                          </td>
-                          <td className="p-3">
-                            <span
-                              className={`inline-flex items-center gap-1 px-2 py-1 border font-label-sm rounded uppercase ${info.classes}`}
-                            >
-                              <span className="material-symbols-outlined text-[14px]">{info.icon}</span>
-                              {info.label}
-                            </span>
-                          </td>
-                          <td className="p-3 text-sm text-primary">
-                            {log.acta_responsable || log.nombre_equipo
-                              ? `${log.acta_responsable || ''} ${log.nombre_equipo ? `(${log.nombre_equipo})` : ''}`.trim()
-                              : 'Acta eliminada'}
-                          </td>
-                          <td className="p-3 text-right">
-                            <button
-                              className="text-on-surface-variant hover:text-secondary group-hover:opacity-100 opacity-50 transition-all"
-                              title={log.detalle ? JSON.stringify(log.detalle) : 'Sin detalle'}
-                            >
-                              <span className="material-symbols-outlined">visibility</span>
-                            </button>
-                          </td>
-                        </tr>
+                              <div>{log.fecha ? new Date(log.fecha).toLocaleTimeString('es-GT') : ''}</div>
+                            </td>
+                            <td className="p-3">
+                              <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 rounded-full flex items-center justify-center font-label-bold text-[10px] bg-secondary-container text-on-secondary-container">
+                                  {iniciales(log.usuario)}
+                                </div>
+                                <span className="font-medium">{log.usuario || 'Usuario eliminado'}</span>
+                              </div>
+                            </td>
+                            <td className="p-3">
+                              <span
+                                className={`inline-flex items-center gap-1 px-2 py-1 border font-label-sm rounded uppercase ${info.classes}`}
+                              >
+                                <span className="material-symbols-outlined text-[14px]">{info.icon}</span>
+                                {info.label}
+                              </span>
+                            </td>
+                            <td className="p-3 text-sm text-primary">
+                              {log.acta_responsable || log.nombre_equipo
+                                ? `${log.acta_responsable || ''} ${log.nombre_equipo ? `(${log.nombre_equipo})` : ''}`.trim()
+                                : 'Acta eliminada'}
+                            </td>
+                            <td className="p-3 text-right">
+                              <button
+                                onClick={() => setExpandidoId((id) => (id === log.id ? null : log.id))}
+                                disabled={!log.detalle || Object.keys(log.detalle).length === 0}
+                                className="text-on-surface-variant hover:text-secondary group-hover:opacity-100 opacity-50 transition-all disabled:opacity-20 disabled:cursor-not-allowed"
+                                title={log.detalle ? 'Ver cambios' : 'Sin detalle'}
+                              >
+                                <span className="material-symbols-outlined">
+                                  {expandidoId === log.id ? 'expand_less' : 'visibility'}
+                                </span>
+                              </button>
+                            </td>
+                          </tr>
+                          {expandidoId === log.id && log.detalle && (
+                            <tr className="bg-surface-container-low">
+                              <td colSpan={5} className="p-4">
+                                <div className="flex flex-col gap-2">
+                                  {Object.entries(log.detalle).map(([campo, cambio]) => (
+                                    <div key={campo} className="flex flex-wrap items-center gap-2 text-sm">
+                                      <span className="font-label-bold text-label-bold text-on-surface min-w-[140px]">
+                                        {NOMBRES_CAMPO[campo] || campo}:
+                                      </span>
+                                      <span className="px-2 py-0.5 rounded bg-error-container text-on-error-container line-through">
+                                        {formatearValor(cambio.anterior)}
+                                      </span>
+                                      <span className="material-symbols-outlined text-[16px] text-on-surface-variant">
+                                        arrow_forward
+                                      </span>
+                                      <span className="px-2 py-0.5 rounded bg-secondary-container text-on-secondary-container">
+                                        {formatearValor(cambio.nuevo)}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </>
                       )
                     })}
                 </tbody>
