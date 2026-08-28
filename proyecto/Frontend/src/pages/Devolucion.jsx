@@ -1,7 +1,7 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import InlineEditableText from '../components/InlineEditableText.jsx'
+import FirmaPad from '../components/FirmaPad.jsx'
 import useLocalStorageState from '../hooks/useLocalStorageState.js'
-import { generatePdfFromElement } from '../utils/generatePdf.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { crearActa } from '../services/api.js'
 
@@ -26,12 +26,12 @@ function generarIdFila() {
 
 function Devolucion() {
   const { token } = useAuth()
-  const printRef = useRef(null)
-  const [generating, setGenerating] = useState(false)
   const [saveStatus, setSaveStatus] = useState('idle') // idle | saving | saved | error
   const [errorGuardado, setErrorGuardado] = useState('')
   const [estadoActa, setEstadoActa] = useState('borrador') // borrador | finalizado
   const [errores, setErrores] = useState({})
+  const [firmaEntrega, setFirmaEntrega] = useState(null) // base64 o null
+  const [firmaRecibe, setFirmaRecibe] = useState(null)
 
   // Datos del Usuario (necesarios para validar al Finalizar)
   const [fecha, setFecha] = useState('2024-10-24')
@@ -144,6 +144,8 @@ function Devolucion() {
     if (modalidadPaginas === 'dos' && !noSerie.trim() && !nombreEquipo.trim()) {
       nuevosErrores.equipo = true
     }
+    if (!firmaEntrega) nuevosErrores.firmaEntrega = true
+    if (!firmaRecibe) nuevosErrores.firmaRecibe = true
     setErrores(nuevosErrores)
     if (Object.keys(nuevosErrores).length > 0) return
 
@@ -160,6 +162,8 @@ function Devolucion() {
         serie: noSerie,
         nombre_equipo: nombreEquipo,
         borrador: false,
+        firma_entrega_base64: firmaEntrega,
+        firma_recibe_base64: firmaRecibe,
         accesorios: filasAccesorios.map((f) => ({
           articulo: f.articulo,
           marca: f.marca,
@@ -177,16 +181,39 @@ function Devolucion() {
     }
   }
 
-  async function handleGeneratePdf() {
-    if (!printRef.current || generating) return
-    setGenerating(true)
-    try {
-      await generatePdfFromElement(printRef.current, 'hoja-devolucion-legumex.pdf')
-    } catch (err) {
-      console.error('No se pudo generar el PDF', err)
-    } finally {
-      setGenerating(false)
+  function handleCancelar() {
+    const hayDatos =
+      responsable.trim() ||
+      departamento ||
+      noSerie.trim() ||
+      nombreEquipo.trim() ||
+      filasAccesorios.length > 0
+
+    if (hayDatos && !window.confirm('¿Descartar los datos capturados en este formulario?')) {
+      return
     }
+
+    setFecha('2024-10-24')
+    setResponsable('')
+    setDepartamento('')
+    setPlanta('Tejar')
+    setModalidadPaginas('dos')
+    setMarcaEquipo('Original')
+    setMarcaEquipoDetalle('')
+    setNoSerie('')
+    setNombreEquipo('')
+    setDiaEntrega('__')
+    setMesEntrega('__')
+    setAnioEntrega('____')
+    setNombreEntrega('(clic para escribir su nombre)')
+    setAccesoriosSeleccionados([])
+    setFilasAccesorios([])
+    setFirmaEntrega(null)
+    setFirmaRecibe(null)
+    setErrores({})
+    setErrorGuardado('')
+    setSaveStatus('idle')
+    setEstadoActa('borrador')
   }
 
   return (
@@ -196,21 +223,11 @@ function Devolucion() {
         <div className="font-headline-lg text-headline-lg font-bold text-primary">
           Formulario de Retorno
         </div>
-        <div className="flex items-center gap-4">
-          <button
-            onClick={handleGeneratePdf}
-            disabled={generating}
-            className="text-on-surface-variant hover:text-primary transition-colors flex items-center gap-2 font-label-bold text-label-bold disabled:opacity-50"
-          >
-            <span className="material-symbols-outlined text-sm">picture_as_pdf</span>
-            {generating ? 'Generando...' : 'Generar PDF'}
-          </button>
-        </div>
       </div>
 
       {/* Scrollable Content Canvas */}
       <div className="flex-1 p-4 md:p-8 custom-scrollbar relative">
-        <div ref={printRef} className="max-w-[896px] mx-auto space-y-stack-lg pb-8">
+        <div className="max-w-[896px] mx-auto space-y-stack-lg pb-8">
           {/* 1. Header: Official letterhead */}
           <div className="bg-surface-container-lowest border border-outline-variant rounded-lg shadow-sm overflow-hidden">
             <div className="border-b-3 border-primary w-full h-[3px]"></div>
@@ -721,26 +738,27 @@ function Devolucion() {
                   title="Clic para escribir su nombre"
                 />
               </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-12 mt-12 px-8">
-                <div className="flex flex-col items-center">
-                  <div className="w-full border-b border-outline-variant mb-2 h-16 relative"></div>
-                  <span className="font-label-bold text-label-bold text-primary uppercase">
-                    Nombre y Firma de quien Entrega
-                  </span>
-                  <span className="font-label-sm text-label-sm text-on-surface-variant mt-1">
-                    (Usuario Final)
-                  </span>
-                </div>
-                <div className="flex flex-col items-center">
-                  <div className="w-full border-b border-outline-variant mb-2 h-16 relative"></div>
-                  <span className="font-label-bold text-label-bold text-primary uppercase">
-                    Nombre y Firma de quien Recibe
-                  </span>
-                  <span className="font-label-sm text-label-sm text-on-surface-variant mt-1">
-                    (Soporte TI)
-                  </span>
-                </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-12 px-8">
+                <FirmaPad
+                  titulo="Nombre y Firma de quien Entrega"
+                  subtitulo="(Usuario Final)"
+                  firmaUrl={firmaEntrega}
+                  onConfirmar={setFirmaEntrega}
+                  onReiniciar={() => setFirmaEntrega(null)}
+                />
+                <FirmaPad
+                  titulo="Nombre y Firma de quien Recibe"
+                  subtitulo="(Soporte TI)"
+                  firmaUrl={firmaRecibe}
+                  onConfirmar={setFirmaRecibe}
+                  onReiniciar={() => setFirmaRecibe(null)}
+                />
               </div>
+              {(errores.firmaEntrega || errores.firmaRecibe) && (
+                <p className="text-error font-label-sm text-label-sm px-8 mt-2 text-center">
+                  Ambas firmas deben quedar confirmadas para finalizar la devolución.
+                </p>
+              )}
             </div>
           </section>
 
@@ -771,7 +789,11 @@ function Devolucion() {
           )}
 
           <div className="flex justify-end gap-4 pt-4 border-t border-outline-variant">
-            <button className="px-6 py-2 border border-outline text-on-surface-variant rounded hover:bg-surface-container-low transition-colors font-label-bold text-label-bold">
+            <button
+              type="button"
+              onClick={handleCancelar}
+              className="px-6 py-2 border border-outline text-on-surface-variant rounded hover:bg-surface-container-low transition-colors font-label-bold text-label-bold"
+            >
               Cancelar
             </button>
             <button
