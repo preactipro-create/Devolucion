@@ -8,7 +8,11 @@ async function generarPdfActa(acta) {
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
 
-  const esUnaHoja = acta.modalidad === 'una_hoja' || acta.modalidad === '1_pagina'
+  // El frontend histórico ha mandado distintos valores para "una hoja"
+  // ('una', 'una_hoja', '1_pagina'); se aceptan todos para no depender de
+  // una migración de datos y para que nunca vuelva a generar 2 páginas
+  // quien pidió 1.
+  const esUnaHoja = ['una', 'una_hoja', '1_pagina'].includes(acta.modalidad)
 
   if (esUnaHoja) {
     await construirPaginaUnaHoja(pdfDoc, acta, font, fontBold)
