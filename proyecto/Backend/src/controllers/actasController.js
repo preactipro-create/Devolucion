@@ -5,12 +5,13 @@ const { verificarPasswordActual } = require('../services/authService')
 const { calcularDiff } = require('../utils/diffUtil')
 const { registrarAuditoria } = require('../services/auditoriaService')
 const { generarPdfActa } = require('../services/pdfService')
+const { subirFirma } = require('../services/storageService')
 
 // Un acta no tiene sentido sin sus accesorios: ambas entidades se gestionan
 // bajo una misma transacción SQL para garantizar la integridad de los datos.
 
 const crearActa = asyncHandler(async (req, res) => {
-  const { accesorios, ...datosActa } = req.body
+  const { accesorios, firma_entrega_base64, firma_recibe_base64, ...datosActa } = req.body
   const client = await pool.connect()
 
   try {
@@ -36,6 +37,24 @@ const crearActa = asyncHandler(async (req, res) => {
     const resActa = await client.query(insertActaQuery, valoresActa)
     const actaId = resActa.rows[0].id
 
+    // 1.5. Firmas capturadas en el formulario (opcionales). Se suben
+    // recién aquí porque la ruta del archivo en Storage usa el actaId,
+    // que no existe hasta que se inserta la fila principal.
+    if (firma_entrega_base64) {
+      const url = await subirFirma(actaId, 'entrega', firma_entrega_base64)
+      await client.query(
+        'UPDATE actas_devolucion SET firma_entrega_url = $1, firma_entrega_confirmada = true WHERE id = $2',
+        [url, actaId]
+      )
+    }
+    if (firma_recibe_base64) {
+      const url = await subirFirma(actaId, 'recibe', firma_recibe_base64)
+      await client.query(
+        'UPDATE actas_devolucion SET firma_recibe_url = $1, firma_recibe_confirmada = true WHERE id = $2',
+        [url, actaId]
+      )
+    }
+
     // 2. Insertar accesorios (Fase 3)
     if (accesorios && accesorios.length > 0) {
       const insertAccesoriosQuery = `
@@ -57,6 +76,7 @@ const crearActa = asyncHandler(async (req, res) => {
       accion: 'CREAR',
       registroId: actaId,
       detalle: { borrador: datosActa.borrador },
+      contexto: { responsable: datosActa.responsable, nombre_equipo: datosActa.nombre_equipo },
     })
 
     await client.query('COMMIT')
@@ -156,6 +176,10 @@ const editarActa = asyncHandler(async (req, res) => {
         accion: 'EDITAR',
         registroId: id,
         detalle: diferencias,
+        contexto: {
+          responsable: nuevosDatos.responsable ?? actaAnterior.responsable,
+          nombre_equipo: nuevosDatos.nombre_equipo ?? actaAnterior.nombre_equipo,
+        },
       })
     }
 
@@ -179,6 +203,7 @@ const eliminarActa = asyncHandler(async (req, res) => {
 
   const result = await pool.query('UPDATE actas_devolucion SET eliminado = true WHERE id = $1 RETURNING *', [id])
   if (result.rowCount === 0) throw new ApiError(404, 'Acta no encontrada')
+  const actaEliminada = result.rows[0]
 
   // Aquí no se usa transacción explícita (Fase 2), así que se usa el pool directo.
   await registrarAuditoria({
@@ -187,6 +212,7 @@ const eliminarActa = asyncHandler(async (req, res) => {
     accion: 'ELIMINAR',
     registroId: id,
     detalle: { motivo: 'Eliminado lógico' },
+    contexto: { responsable: actaEliminada.responsable, nombre_equipo: actaEliminada.nombre_equipo },
   })
 
   res.json({ message: 'Acta eliminada lógicamente' })
@@ -220,6 +246,89 @@ const generarPdf = asyncHandler(async (req, res) => {
   res.end(Buffer.from(pdfBytes))
 })
 
+const TIPOS_FIRMA_VALIDOS = ['entrega', 'recibe']
+
+const guardarFirma = asyncHandler(async (req, res) => {
+  const { id } = req.params
+  const { tipo, imagen_base64 } = req.body
+
+  if (!TIPOS_FIRMA_VALIDOS.includes(tipo)) {
+    throw new ApiError(400, 'Tipo de firma inválido')
+  }
+  if (!imagen_base64) {
+    throw new ApiError(400, 'Falta la imagen de la firma')
+  }
+
+  const actaRes = await pool.query('SELECT * FROM actas_devolucion WHERE id = $1 AND eliminado = false', [id])
+  if (actaRes.rowCount === 0) throw new ApiError(404, 'Acta no encontrada')
+  const acta = actaRes.rows[0]
+
+  const columnaConfirmada = tipo === 'entrega' ? 'firma_entrega_confirmada' : 'firma_recibe_confirmada'
+  if (acta[columnaConfirmada]) {
+    throw new ApiError(409, 'Esta firma ya está confirmada. Usa "Reiniciar firma" antes de volver a firmar.')
+  }
+
+  const url = await subirFirma(id, tipo, imagen_base64)
+  const columnaUrl = tipo === 'entrega' ? 'firma_entrega_url' : 'firma_recibe_url'
+
+  await pool.query(
+    `UPDATE actas_devolucion SET ${columnaUrl} = $1, ${columnaConfirmada} = true WHERE id = $2`,
+    [url, id]
+  )
+
+  await registrarAuditoria({
+    client: null,
+    usuarioId: req.user.id,
+    accion: 'FIRMAR',
+    registroId: id,
+    detalle: { tipo },
+    contexto: { responsable: acta.responsable, nombre_equipo: acta.nombre_equipo },
+  })
+
+  res.json({ message: 'Firma guardada y confirmada', url })
+})
+
+const reiniciarFirma = asyncHandler(async (req, res) => {
+  const { id } = req.params
+  const { tipo, password } = req.body
+
+  if (!TIPOS_FIRMA_VALIDOS.includes(tipo)) {
+    throw new ApiError(400, 'Tipo de firma inválido')
+  }
+
+  const actaRes = await pool.query('SELECT * FROM actas_devolucion WHERE id = $1 AND eliminado = false', [id])
+  if (actaRes.rowCount === 0) throw new ApiError(404, 'Acta no encontrada')
+  const acta = actaRes.rows[0]
+
+  const columnaConfirmada = tipo === 'entrega' ? 'firma_entrega_confirmada' : 'firma_recibe_confirmada'
+  const columnaUrl = tipo === 'entrega' ? 'firma_entrega_url' : 'firma_recibe_url'
+
+  // Una firma ya confirmada es un dato "sensible" del acta (evidencia de
+  // entrega/recepción): borrarla exige la misma confirmación de contraseña
+  // que editar o eliminar un acta completa, para que no cualquiera con
+  // sesión abierta pueda hacerlo con un solo clic.
+  if (acta[columnaConfirmada]) {
+    const authValid = await verificarPasswordActual(req.user.id, password)
+    if (!authValid) throw new ApiError(401, 'Contraseña incorrecta')
+  }
+
+  await pool.query(
+    `UPDATE actas_devolucion SET ${columnaUrl} = NULL, ${columnaConfirmada} = false WHERE id = $1`,
+    [id]
+  )
+
+  await registrarAuditoria({
+    client: null,
+    usuarioId: req.user.id,
+    accion: 'REINICIAR_FIRMA',
+    registroId: id,
+    detalle: { tipo },
+    contexto: { responsable: acta.responsable, nombre_equipo: acta.nombre_equipo },
+  })
+
+  res.json({ message: 'Firma reiniciada' })
+})
+
 module.exports = {
   crearActa,
   listarActas,
@@ -227,4 +336,6 @@ module.exports = {
   editarActa,
   eliminarActa,
   generarPdf,
+  guardarFirma,
+  reiniciarFirma,
 }
