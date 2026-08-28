@@ -6,6 +6,7 @@ import {
   editarActa,
   eliminarActa,
   descargarPdfActa,
+  reiniciarFirma,
 } from '../services/api.js'
 
 const CAMPOS_EDITABLES = [
@@ -35,8 +36,23 @@ function ActaModal({ acta, modo, onClose, onGuardado }) {
   const [password, setPassword] = useState('')
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState('')
+  const [firmaEntregaUrl, setFirmaEntregaUrl] = useState(acta.firma_entrega_url || null)
+  const [firmaRecibeUrl, setFirmaRecibeUrl] = useState(acta.firma_recibe_url || null)
 
   const soloLectura = modo === 'ver'
+
+  async function handleReiniciarFirma(tipo) {
+    const passwordReinicio = window.prompt('Ingresa tu contraseña para reiniciar esta firma:')
+    if (!passwordReinicio) return
+    try {
+      await reiniciarFirma(token, acta.id, tipo, passwordReinicio)
+      if (tipo === 'entrega') setFirmaEntregaUrl(null)
+      else setFirmaRecibeUrl(null)
+      onGuardado()
+    } catch (err) {
+      setError(err.message || 'No se pudo reiniciar la firma')
+    }
+  }
 
   async function handleGuardar(e) {
     e.preventDefault()
@@ -92,6 +108,34 @@ function ActaModal({ acta, modo, onClose, onGuardado }) {
               )}
             </div>
           ))}
+
+          <div className="flex flex-col gap-3 pt-2 border-t border-outline-variant">
+            <p className="font-label-bold text-label-bold text-on-surface">Firmas</p>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { tipo: 'entrega', label: 'Quien Entrega', url: firmaEntregaUrl },
+                { tipo: 'recibe', label: 'Quien Recibe', url: firmaRecibeUrl },
+              ].map(({ tipo, label, url }) => (
+                <div key={tipo} className="flex flex-col items-center gap-1 border border-outline-variant rounded p-2">
+                  {url ? (
+                    <img src={url} alt={`Firma ${label}`} className="h-16 object-contain" />
+                  ) : (
+                    <p className="font-label-sm text-label-sm text-on-surface-variant py-4">Sin firma</p>
+                  )}
+                  <p className="font-label-sm text-label-sm text-on-surface-variant">{label}</p>
+                  {url && (
+                    <button
+                      type="button"
+                      onClick={() => handleReiniciarFirma(tipo)}
+                      className="text-error font-label-sm text-label-sm underline"
+                    >
+                      Reiniciar
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
 
           {!soloLectura && (
             <div className="flex flex-col gap-1 pt-2 border-t border-outline-variant">
