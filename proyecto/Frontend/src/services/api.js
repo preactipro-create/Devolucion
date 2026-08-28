@@ -55,6 +55,20 @@ export async function crearActa(token, payload) {
   })
 }
 
+export async function guardarFirma(token, actaId, tipo, imagenBase64) {
+  return authRequest(`/api/actas/${actaId}/firma`, token, {
+    method: 'POST',
+    body: JSON.stringify({ tipo, imagen_base64: imagenBase64 }),
+  })
+}
+
+export async function reiniciarFirma(token, actaId, tipo, password) {
+  return authRequest(`/api/actas/${actaId}/firma`, token, {
+    method: 'DELETE',
+    body: JSON.stringify({ tipo, password }),
+  })
+}
+
 export async function listarActas(token) {
   return authRequest('/api/actas', token, { method: 'GET' })
 }
@@ -104,6 +118,8 @@ export default {
   checkApiHealth,
   login,
   crearActa,
+  guardarFirma,
+  reiniciarFirma,
   listarActas,
   obtenerActa,
   editarActa,
