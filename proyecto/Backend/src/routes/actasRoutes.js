@@ -13,5 +13,7 @@ router.get('/:id', actasController.obtenerActa)
 router.get('/:id/pdf', actasController.generarPdf)
 router.put('/:id', actasController.editarActa)
 router.delete('/:id', actasController.eliminarActa)
+router.post('/:id/firma', actasController.guardarFirma)
+router.delete('/:id/firma', actasController.reiniciarFirma)
 
 module.exports = router
